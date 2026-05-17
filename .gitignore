@@ -1,0 +1,8 @@
+build/
+mips
+*.o
+*.exe
+*.out
+.idea/
+.vscode/
+.DS_Store

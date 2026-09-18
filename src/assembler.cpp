@@ -1,7 +1,8 @@
 // assembler.cpp — convert MIPS assembly text into 32-bit instruction words.
 //
 // Two-pass design:
-//   pass 1: collect labels and their byte addresses.
+//   pass 1: collect labels and their byte addresses (a `li` whose immediate
+//           does not fit in 16 signed bits takes two words).
 //   pass 2: emit instruction words, resolving labels for branches/jumps.
 //
 // Author: @forgehk.
@@ -83,6 +84,18 @@ int32_t parse_imm(const std::string &s) {
     return std::stoi(s);
 }
 
+bool fits_int16(int32_t v) {
+    return v >= INT16_MIN && v <= INT16_MAX;
+}
+
+// Number of instruction words a source line assembles to. Every mnemonic is
+// one word except `li` with an immediate outside the signed 16-bit range,
+// which expands to lui + ori.
+uint32_t words_for(const std::string &mnemonic, const std::vector<std::string> &ops) {
+    if (mnemonic == "li" && ops.size() == 2 && !fits_int16(parse_imm(ops[1]))) return 2;
+    return 1;
+}
+
 // Parse "imm($reg)" addressing — returns (imm, regnum).
 std::pair<int32_t, int> parse_mem(const std::string &s) {
     auto open = s.find('(');
@@ -148,7 +161,7 @@ std::vector<Word> assemble(const std::vector<std::string> &lines) {
 
         auto ops = split_operands(rest);
         program.push_back({mnemonic, ops, addr});
-        addr += 4;
+        addr += 4 * words_for(mnemonic, ops);
     }
 
     // PASS 2: encode.
@@ -233,6 +246,38 @@ std::vector<Word> assemble(const std::vector<std::string> &lines) {
             if (lit != labels.end()) target_addr = lit->second;
             else                    target_addr = static_cast<uint32_t>(parse_imm(line.ops[0]));
             out.push_back(enc_j(op, target_addr >> 2));
+            continue;
+        }
+
+        // ---- pseudo-instructions ----
+
+        if (m == "li") {
+            // li $rt, imm  ->  addi $rt, $zero, imm           (fits in int16)
+            //              ->  lui $rt, hi ; ori $rt, $rt, lo  (otherwise)
+            if (line.ops.size() != 2)
+                throw std::runtime_error("li: need rt, imm");
+            int rt = reg_number(line.ops[0]);
+            int32_t imm = parse_imm(line.ops[1]);
+            if (fits_int16(imm)) {
+                out.push_back(enc_i(kIType.at("addi").opcode, 0, rt,
+                                    static_cast<int16_t>(imm)));
+            } else {
+                uint32_t u = static_cast<uint32_t>(imm);
+                out.push_back(enc_i(kIType.at("lui").opcode, 0, rt,
+                                    static_cast<int16_t>(u >> 16)));
+                out.push_back(enc_i(kIType.at("ori").opcode, rt, rt,
+                                    static_cast<int16_t>(u & 0xffff)));
+            }
+            continue;
+        }
+
+        if (m == "move") {
+            // move $rd, $rs  ->  add $rd, $rs, $zero
+            if (line.ops.size() != 2)
+                throw std::runtime_error("move: need rd, rs");
+            int rd = reg_number(line.ops[0]);
+            int rs = reg_number(line.ops[1]);
+            out.push_back(enc_r(rs, 0, rd, 0, kRType.at("add").funct));
             continue;
         }
 

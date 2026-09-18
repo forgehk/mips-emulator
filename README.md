@@ -2,7 +2,7 @@
 
 > A small MIPS-32 instruction emulator in modern C++. Parses MIPS assembly, decodes R/I/J-type instructions, and executes them against a register file and 64KB of byte-addressable memory.
 
-[![C++](https://img.shields.io/badge/C++-17-blue.svg)]() [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI](https://github.com/forgehk/mips-emulator/actions/workflows/ci.yml/badge.svg)](https://github.com/forgehk/mips-emulator/actions/workflows/ci.yml) [![C++](https://img.shields.io/badge/C++-17-blue.svg)]() [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
 
@@ -28,8 +28,12 @@ add  $v0, $t1, $zero    # return sum in $v0
 
 ```bash
 $ ./mips run examples/sum_first_10.s
-program halted after 32 cycles
-$v0 = 55
+program halted after 34 cycles
+  $zero = 0
+  $v0 = 55
+  $t0 = 10
+  $t1 = 55
+  $t2 = 10
 ```
 
 Built as a self-study of MIPS architecture and single-cycle datapath design.
@@ -82,14 +86,14 @@ cd mips-emulator
 make
 ./mips run examples/sum_first_10.s
 
-# trace mode: print PC, instruction, and registers each cycle
+# trace mode: print PC and instruction word each cycle
 ./mips run --trace examples/sum_first_10.s
 
 # dump memory after running
 ./mips run examples/memory_demo.s --dump 0x100,0x120
 ```
 
-Run the test suite:
+Run the test suite (GitHub Actions runs it, plus the example programs, on every push):
 
 ```bash
 make test
@@ -120,11 +124,9 @@ make test
 
 The `examples/` directory has runnable programs covering:
 
-- **sum_first_10.s** — for-loop summation
-- **factorial.s** — recursive `jal` / `jr $ra` factorial
-- **memory_demo.s** — `lw` / `sw` to stack and heap regions
-- **branch_demo.s** — `beq`, `bne`, `slt` based control flow
-- **shift_logic.s** — `sll`, `srl`, `and`, `or`, `xor`, `nor`
+- **sum_first_10.s** — for-loop summation with `addi`, `add`, `bne`
+- **memory_demo.s** — `lw` / `sw` through a base register
+- **branch_demo.s** — `slt`, `beq`, `j` based control flow (max of two values)
 
 ---
 

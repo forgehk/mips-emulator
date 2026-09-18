@@ -142,6 +142,81 @@ void test_zero_reg_stays_zero() {
     check_eq("$zero unchanged", cpu.regs[2], 0);
 }
 
+void test_li_small_immediate() {
+    // Anything that fits in 16 signed bits is a single addi.
+    auto cpu = run_program(R"(
+        li $v0, 42
+        li $v1, -1
+        li $a0, -32768
+        li $a1, 32767
+    )");
+    check_eq("li 42",     cpu.regs[2], 42);
+    check_eq("li -1",     cpu.regs[3], -1);
+    check_eq("li -32768", cpu.regs[4], -32768);
+    check_eq("li 32767",  cpu.regs[5], 32767);
+
+    auto words = mips::assemble("li $t0, 5");
+    check_eq("li small is one word", static_cast<int32_t>(words.size()), 1);
+    check_eq("li small encodes as addi $t0, $zero, 5",
+             static_cast<int32_t>(words[0]), 0x20080005);
+}
+
+void test_li_large_immediate() {
+    // Out of the int16 range: lui for the high half, ori for the low half.
+    auto cpu = run_program(R"(
+        li $v0, 0x12345678
+        li $v1, 0x8000
+        li $a0, -40000
+        li $a1, 0x7fffffff
+    )");
+    check_eq("li 0x12345678", cpu.regs[2], 0x12345678);
+    check_eq("li 0x8000",     cpu.regs[3], 32768);
+    check_eq("li -40000",     cpu.regs[4], -40000);
+    check_eq("li 0x7fffffff", cpu.regs[5], 0x7fffffff);
+
+    auto words = mips::assemble("li $t0, 0x12345678");
+    check_eq("li large is two words", static_cast<int32_t>(words.size()), 2);
+    check_eq("li large lui $t0, 0x1234",
+             static_cast<int32_t>(words[0]), 0x3c081234);
+    check_eq("li large ori $t0, $t0, 0x5678",
+             static_cast<int32_t>(words[1]), 0x35085678);
+}
+
+void test_move() {
+    auto cpu = run_program(R"(
+        li   $t0, 7
+        move $v0, $t0
+    )");
+    check_eq("move", cpu.regs[2], 7);
+
+    auto words = mips::assemble("move $v0, $t0");
+    check_eq("move encodes as add $v0, $t0, $zero",
+             static_cast<int32_t>(words[0]), 0x01001020);
+}
+
+void test_labels_after_two_word_li() {
+    // A large li occupies two words, so every label and branch offset
+    // behind it has to account for the extra word.
+    auto jump = run_program(R"(
+        li   $v0, 0x12345678
+        j    end
+        li   $v0, 0x7fffffff
+end:
+    )");
+    check_eq("j over a two-word li", jump.regs[2], 0x12345678);
+
+    auto loop = run_program(R"(
+        li   $t0, 0
+loop:
+        addi $t0, $t0, 1
+        li   $t3, 0x10000
+        slti $t1, $t0, 3
+        bne  $t1, $zero, loop
+        add  $v0, $t0, $t3
+    )");
+    check_eq("bne over a two-word li", loop.regs[2], 3 + 0x10000);
+}
+
 void test_invalid_register_name_throws() {
     ++g_total;
     try {
@@ -167,6 +242,10 @@ int main() {
     test_unconditional_jump();
     test_beq();
     test_zero_reg_stays_zero();
+    test_li_small_immediate();
+    test_li_large_immediate();
+    test_move();
+    test_labels_after_two_word_li();
     test_invalid_register_name_throws();
     std::cout << "\n" << (g_total - g_failures) << "/" << g_total << " passed\n";
     return g_failures == 0 ? 0 : 1;

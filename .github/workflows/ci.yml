@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: g++ build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compiler version
+        run: g++ --version
+
+      - name: Build
+        run: make
+
+      - name: Run tests
+        run: make test
+
+      - name: Run the example programs
+        run: |
+          check() {
+            out=$(./mips run "$1")
+            echo "$out"
+            echo "$out" | grep -qF "\$v0 = $2"
+          }
+          check examples/sum_first_10.s 55
+          check examples/branch_demo.s 42
+          check examples/memory_demo.s 42
